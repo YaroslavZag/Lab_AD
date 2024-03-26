@@ -1,7 +1,7 @@
 import pandas as pd
 from spyre import server
 import os
-
+import datetime as dt
 
 class SimpleApp(server.App):
     title = "Data visualization"  # Заголовок додатку
@@ -30,13 +30,35 @@ class SimpleApp(server.App):
             "type": "text",
             "label": "Рік:",
             "value": "2005",
-            "key": "year",  # Ключ параметра
+            "key": "start_year",  # Ключ параметра
             "action_id": "update_data",  # Ідентифікатор дії для оновлення даних
         },
+        {
+            "type": "text",
+            "label": "Рік:",
+            "value": "2005",
+            "key": "end_year",  # Ключ параметра
+            "action_id": "update_data",  # Ідентифікатор дії для оновлення даних
+        },
+         {
+            "type": 'text',
+            "label": 'Week min',
+            "key": 'week_min',
+            "value": '1',
+            "action_id": "update_data"
+        },
+
+        {
+            "type": 'text',
+            "label": 'Week max',
+            "key": 'week_max',
+            "value": '52',
+            "action_id": "update_data"
+        }
     ]
 
     # Визначення кнопки для оновлення даних
-    controls = [{"type": "button", "label": "Побудувати", "id": "update_data"}]
+    controls = [{"type": "hidden", "id": "update_data"}]
 
     # Визначення вкладок
     tabs = ["Plot", "Table"]
@@ -48,8 +70,7 @@ class SimpleApp(server.App):
             "id": "table_id",
             "control_id": "update_data",
             "tab": "Table",
-            "output_type": "html",
-            "get_html": "getHTML",
+            "on_page_load": True
         },
         {
             "type": "plot",
@@ -63,36 +84,65 @@ class SimpleApp(server.App):
     def getData(self, params):
         current_dir = os.path.dirname(__file__)
         file_path = os.path.join(current_dir, 'data.csv')
-        data = pd.read_csv(file_path)
-        return data
+        df = pd.read_csv(file_path)
+        return df
     
-    # Фільтрую дані з файлу за рокомі регіоном для виводоу в таблиці
-    def getDataForYearAndRegion(self, params, year, region):
-        data = self.getData(params)
-        filtered_data = data[(data['Indexes'] == region) & (data['Year'] == year)]
-        return filtered_data
+    def getTable(self, params):
+        df = self.getData(params)
+        region = int(params['region'])
+        start_year = int(params['start_year'])
+        end_year = int(params['end_year'])
+        week_min = int(params['week_min'])
+        week_max = int(params['week_max'])
+        if week_max > 52 or week_min > 52:
+            return pd.DataFrame({'message': ['Будь ласка, введіть значення для Week max або Week min менше або рівне 52.']})
+        if week_max < week_min and start_year >= end_year:
+            return pd.DataFrame({'message': ['Будь ласка, введіть правильні дані для Week min і Week max.']})
+        if end_year - start_year > 1:
+            data = df[(df['Indexes'] == region)]
+            data = data[((data['Year'] == start_year) & (data['Week'] >= week_min)) |
+                    ((data['Year'] == end_year) & (data['Week'] <= week_max)) |
+                    ((data['Year'] > start_year) & (data['Year'] < end_year))]
+        elif start_year == end_year:
+            data = df[(df['Indexes'] == region) & (df['Year'] == start_year) & df['Week'].between(week_min, week_max)]
+        else:
+        # В іншому випадку враховуємо тільки вибрані роки
+            data = df[(df['Indexes'] == region)]
+            data = data[((data['Year'] == start_year) & (data['Week'] >= week_min)) |
+                    ((data['Year'] == end_year) & (data['Week'] <= week_max))]
+        columns = ['Year', 'Week', params['ticker'], 'Indexes']
+        return data.loc[:, columns]
+
 
     # Функція для виведення графіку за регіоном, роком і потрібним рядком
     def getPlot(self, params):
         region = int(params['region'])
         ticker = params['ticker']
-        year = int(params['year'])
-        data = self.getData(params)
-        filtered_data = data[(data['Indexes'] == region) & (data['Year'] == year)]
-
-        plt_obj = filtered_data.plot(x='Week', y=ticker)
-        plt_obj.set_ylabel("Значення")
+        start_year = int(params['start_year'])
+        end_year = int(params['end_year'])
+        week_min = int(params['week_min'])
+        week_max = int(params['week_max'])
+        df = self.getData(params)
+        if end_year - start_year > 1:
+            data = df[(df['Indexes'] == region)]
+            data = data[((data['Year'] == start_year) & (data['Week'] >= week_min)) |
+                    ((data['Year'] == end_year) & (data['Week'] <= week_max)) |
+                    ((data['Year'] > start_year) & (data['Year'] < end_year))]
+        elif end_year == start_year:
+            data = df[(df['Indexes'] == region) & (df['Year'] == start_year) & df['Week'].between(week_min, week_max)]
+        else:
+            data = df[(df['Indexes'] == region)]
+            data = data[((data['Year'] == start_year) & (data['Week'] >= week_min)) |
+                    ((data['Year'] == end_year) & (data['Week'] <= week_max))]
+        data['Date'] = pd.to_datetime(data.Year.astype(str), format='%Y') + \
+             pd.to_timedelta(data.Week.mul(7).astype(str) + ' days')
+        
+        plt_obj = data.plot(x='Date', y=ticker)
+        plt_obj.set_ylabel("NOAA дані")
         plt_obj.set_xlabel("Тиждень")
-        plt_obj.set_title(f"Графік для регіону {region} у {year} році")
-        fig = plt_obj.get_figure()
-        return fig
-    
-    # Вивід таблиці
-    def getHTML(self, params):
-        year = int(params['year'])
-        region = int(params['region'])
-        data = self.getDataForYearAndRegion(params, year, region)
-        return data.to_html()
+        plt_obj.set_title(f"Графік для регіону {region} за період з {week_min} {start_year} по {week_max} {end_year}")
+        plot = plt_obj.get_figure()
+        return plot
 
 if __name__ == '__main__':
     app = SimpleApp()
