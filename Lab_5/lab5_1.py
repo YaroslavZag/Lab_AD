@@ -14,13 +14,25 @@ def simple_moving_average(data, window_size):
 
 # Оновлена функція гармоніки з шумом та фільтрацією
 def harmonic_with_noise_filtered(t, amplitude, frequency, phase, noise_mean, noise_covariance, show_noise, window_size):
+    global previous_noise
+    if noise_mean != harmonic_with_noise_filtered.previous_noise_mean or noise_covariance != harmonic_with_noise_filtered.previous_noise_covariance:
+        harmonic_with_noise_filtered.previous_noise_mean = noise_mean
+        harmonic_with_noise_filtered.previous_noise_covariance = noise_covariance
+        noise = np.random.normal(noise_mean, np.sqrt(noise_covariance), len(t))
+        harmonic_with_noise_filtered.previous_noise = noise
+    else:
+        noise = harmonic_with_noise_filtered.previous_noise
+
     signal = amplitude * np.sin(2 * np.pi * frequency * t + phase)
-    noise = np.random.normal(noise_mean, np.sqrt(noise_covariance), len(t))
     if show_noise:
         noisy_signal = signal + noise
         return simple_moving_average(noisy_signal, window_size)
     else:
         return simple_moving_average(signal, window_size)
+
+harmonic_with_noise_filtered.previous_noise = None
+harmonic_with_noise_filtered.previous_noise_mean = None
+harmonic_with_noise_filtered.previous_noise_covariance = None
 
 # Параметри за замовчуванням
 amplitude_default = 1.0
@@ -120,3 +132,4 @@ def reset(event):
 button.on_clicked(reset)
 
 plt.show()
+
